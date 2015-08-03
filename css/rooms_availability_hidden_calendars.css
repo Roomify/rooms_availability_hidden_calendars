@@ -1,0 +1,47 @@
+.rooms-three-month-calendar {
+	width: 100%;
+	float: left;
+}
+.rooms-three-month-calendar .fc-day.is-hovered,
+.rooms-three-month-calendar .fc-bg td:hover {
+  background-color: yellow;
+}
+#availability-three-calendar-hidden .fc-title {
+	color: #fff;
+}
+.availability-three-calendar-block {
+	display: none;
+}
+#hidden-calendars-ajax-replace .availability-three-calendar-block {
+	display: block;
+}
+
+#availability-three-calendar-hidden .rooms-date-range,
+#availability-three-calendar-hidden .form-item-group-size {
+	float: left;
+  margin-right: 30px;
+}
+#availability-three-calendar-hidden .form-actions [type="submit"] {
+	margin-top: 28px;
+}
+.casa-custom-booking-page .rooms-three-month-calendar-hidden {
+	display: block;
+}
+.casa-custom-booking-page .rooms-hidden-calendars-booking-form .form-wrapper {
+	border: 0px;
+}
+.casa-custom-booking-page .rooms-hidden-calendars-booking-form .form-wrapper div {
+	display: inline-block;
+}
+.casa-custom-booking-page .rooms-hidden-calendars-booking-form .form-wrapper .fieldset-description {
+	display: none;
+}
+.casa-custom-booking-page .rooms-hidden-calendars-booking-form .form-wrapper .rooms-date-range {
+	margin-right: 20px;
+}
+#availability-three-calendar-hidden .casa-availability-constraints-message {
+	margin-top: 30px;
+}
+#availability-three-calendar-hidden .casa-availability-constraints-message label {
+	font-weight: bold;
+}

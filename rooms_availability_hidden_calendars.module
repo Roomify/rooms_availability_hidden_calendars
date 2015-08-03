@@ -1,0 +1,347 @@
+<?php
+
+/**
+ * @file
+ * Rooms Availability Hidden calendars
+ * Provide three hidden calendars to search unit availability.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function rooms_availability_hidden_calendars_menu() {
+  $items['hidden-calendars/%/%/%/%'] = array(
+    'title' => 'Ajax hidden calendars callback',
+    'type' => MENU_CALLBACK,
+    'page callback' => 'ajax_hidden_calendars_callback',
+    'page arguments' => array(1, 2, 3, 4),
+    'access arguments' => array('access content'),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function rooms_availability_hidden_calendars_theme() {
+  return array(
+    'rooms_three_month_calendar_hidden' => array(
+      'template' => 'rooms_three_month_calendar_hidden',
+      'variables' => array(
+        'url' => NULL,
+        'form' => NULL,
+        'year' => NULL,
+        'month' => NULL,
+        'link_options' => NULL,
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function rooms_availability_hidden_calendars_ctools_plugin_directory($module, $plugin) {
+  if (($module == 'ctools') && ($plugin == 'content_types')) {
+    return 'plugins/content_types';
+  }
+}
+
+/**
+ * Ajax callback for rooms availability hidden calendars.
+ */
+function ajax_hidden_calendars_callback($ajax, $unit_id, $year = NULL, $month = NULL) {
+  if ($ajax == 'ajax') {
+    $commands = array();
+    // Html code to replace.
+    $html_generated = '';
+    // The form to select start and end dates.
+    $form = drupal_get_form('rooms_availability_hidden_calendars_booking_form', array($unit_id), $year, $month);
+    // We should pass right month and year.
+    $variables = array(
+      'year' => $year,
+      'month' => $month,
+      'form' => $form,
+    );
+    $html_generated .= theme('rooms_three_month_calendar_hidden', $variables);
+    $commands[] = ajax_command_replace('#availability-three-calendar-hidden', '<div id="hidden-calendars-ajax-replace">' . $html_generated . '</div>');
+
+    $commands[] = ajax_command_changed('#availability-three-calendar-hidden');
+
+    ajax_deliver(array('#type' => 'ajax', '#commands' => $commands));
+  }
+  else {
+    // No ajax, just display an error message.
+    return array(
+      '#markup' => "Can't load ajax request.",
+    );
+  }
+}
+
+/**
+ * Implements hook_preprocess_rooms_three_month_calendar_hidden().
+ */
+function rooms_availability_hidden_calendars_preprocess_rooms_three_month_calendar_hidden(&$vars) {
+  // Get user roles.
+  global $user;
+  $is_administrator = FALSE;
+  // Load FullCalendar.
+  rooms_fullcalendar_loaded();
+
+  // Add css styles for three-month-calendar.
+  drupal_add_css(drupal_get_path('module', 'rooms_availability') . '/css/rooms_three_month_calendar.css');
+  drupal_add_css(drupal_get_path('module', 'rooms_availability') . '/css/fullcalendar.theme.css');
+
+  // If dates are not provided then use the current date.
+  $year = (empty($vars['year'])) ? date('Y', time()) : check_plain($vars['year']);
+  $month = (empty($vars['month'])) ? date('n', time()) : check_plain($vars['month']);
+
+  // Inject settings in javascript that will be used to setup the three months
+  // display.
+  drupal_add_js(array('roomsCalendar' => array('currentMonth' => intval($month))), 'setting');
+  drupal_add_js(array('roomsCalendar' => array('currentYear' => intval($year))), 'setting');
+  drupal_add_js(array('roomsCalendar' => array('firstDay' => intval(variable_get('date_first_day', 0)))), 'setting');
+  $roles = array();
+  $roles = array_keys($user->roles);
+  foreach ($roles as $role) {
+    // Checking if user is Administrator or Rooms Manager.
+    if ($role == 3 || $role == 4) {
+      $is_administrator = TRUE;
+    }
+  }
+  drupal_add_js(array('user_is_administrator' => $is_administrator), 'setting');
+  // Add availability constraints information.
+  $unit = rooms_unit_load(1);
+  $constraints = field_get_items('rooms_unit', $unit, 'rooms_constraints_range');
+  drupal_add_js(array('availabilityConstraints' => $constraints), 'setting');
+
+  // Calculate forward and back dates for the 3-month view calendar.
+  $date1 = new DateTime("$year-$month-1");
+  $date2 = new DateTime("$year-$month-1");
+  $date_current = new DateTime("now");
+
+  $forward = $date1->add(new DateInterval('P3M'));
+  $backward = $date2->sub(new DateInterval('P3M'));
+
+  // Create the links based off the url variable passed in.
+  if (!isset($vars['url'])) {
+    $vars['url'] = '';
+  }
+  $forward_path = $vars['url'] . '/' . $forward->format('Y') . '/' . $forward->format('n');
+  $backward_path = $vars['url'] . '/' . $backward->format('Y') . '/' . $backward->format('n');
+  $current_path = $vars['url'] . '/' . $date_current->format('Y') . '/' .  $date_current->format('n');
+
+  if (!is_array($vars['link_options']) || empty($vars['link_options'])) {
+    $vars['link_options'] = array();
+  }
+  $vars['current_link'] = availability_calendars_render_link(t('Current'), $vars['id'], $date_current->format('Y'), $date_current->format('n'));
+  $vars['backward_link'] = availability_calendars_render_link(t('Back'), $vars['id'], $backward->format('Y'), $backward->format('n'));
+  $vars['forward_link'] = availability_calendars_render_link(t('Forward'), $vars['id'], $forward->format('Y'), $forward->format('n'));
+}
+
+/**
+ * Settings to create the content to display in the block.
+ */
+function availability_three_calendars($unit_id = NULL, $year = '', $month = '') {
+  if ($unit_id == NULL) {
+    // You can customize the string below, or use a drupal_goto() to
+    // send the user to a custom error page.
+    return 'No unit id was sent. Error.';
+  }
+  // Build the availability calendar from the specified unit ids.
+  rooms_fullcalendar_loaded();
+
+  $unit = rooms_unit_load($unit_id);
+  $unit_name = $unit->name;
+
+  // Inject settings in javascript that we will use.
+  $js_settings['roomsAvailabilityRef'][] = array(
+    'unitID' => $unit_id,
+    'style' => ROOMS_AVAILABILITY_GENERIC_STYLE,
+  );
+  drupal_add_js($js_settings, 'setting');
+
+  $result = array(
+    '#prefix' => '<div class="availability-title">',
+    '#markup' => '<h2>' . $unit_name . '</h2>',
+    '#suffix' => '</div>',
+  );
+
+  $element = array(
+    '#theme' => 'rooms_three_month_calendar_hidden',
+    '#url' => 'hidden-calendars/nojs/' . $unit_id . '/' . $year . '/' . $month,
+    '#form' => drupal_get_form('rooms_availability_hidden_calendars_booking_form', array($unit_id), $year, $month),
+    '#year' => $year,
+    '#month' => $month,
+  );
+
+  $title = t('Check Availability');
+
+  return $element;
+}
+
+/**
+ * Lets users see availability and book a date range.
+ */
+function rooms_availability_hidden_calendars_booking_form($form, &$form_state, $unit_id, $year, $month, $js = FALSE) {
+  // Pass variables to $form_state to be available for other modules.
+  $form_state['year'] = $year;
+  $form_state['month'] = $month;
+
+  $form['#attributes']['class'][] = 'rooms-hidden-calendars-booking-form';
+
+  $form['unit_booking'] = array(
+    '#type' => 'fieldset',
+    '#description' => t('Select dates'),
+  );
+
+  $form['unit_booking']['unit_id'] = array(
+    '#type' => 'hidden',
+    '#value' => $unit_id,
+  );
+
+  $form['unit_booking']['rooms_date_range'] = rooms_date_range_fields();
+
+  $form['unit_booking']['group_size'] = array(
+    '#title' => variable_get_value('rooms_booking_manager_group_size'),
+    '#type' => 'select',
+    '#options' => rooms_assoc_range(1, variable_get('rooms_booking_manager_search_form_max_group_size', 8)),
+    '#default_value' => variable_get('rooms_booking_manager_search_form_max_group_size', 8),
+  );
+
+  // Unset a js setting.
+  drupal_add_js(array('rooms' => array('roomsBookingStartDay' => 0)), 'setting');
+
+  // We add the form's #submit array to this button along with the actual submit
+  // handler to preserve any submit handlers added by a form callback_wrapper.
+  $submit = array();
+
+  if (!empty($form['unit_booking']['#submit'])) {
+    $submit += $form['unit_booking']['#submit'];
+  }
+
+  $form['unit_booking']['actions'] = array(
+    '#type' => 'actions',
+    '#tree' => FALSE,
+  );
+
+  $form['unit_booking']['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Book this'),
+    '#submit' => $submit + array('rooms_availability_hidden_calendars_booking_form_submit'),
+    '#ajax' => array('callback' => 'rooms_availability_hidden_calendars_booking_form_ajax_submit'),
+  );
+  $form['unit_booking']['actions']['unit_enquiry'] = array(
+    '#type' => 'link',
+    '#title' => t('or send a query about these dates'),
+    '#href' => 'contact',
+  );
+ 
+  // Setting up availability constraints message.
+  $unit = rooms_unit_load(1);
+  $constraints = field_get_items('rooms_unit', $unit, 'rooms_constraints_range');
+  // Show availability constraints from now to 3 years.
+  $start = new DateTime();
+  $end = new DateTime();
+  $end->add(new DateInterval('P3Y'));
+  if (!empty($constraints)) {
+    $messages = casa_system_get_availability_constraints_by_date($constraints, $start, $end);
+    $availability_constraints_message = '';
+    foreach ($messages as $message) {
+      $availability_constraints_message .= '<li>' . $message . '</li>';
+    } 
+    $form['unit_booking']['availability_constraints'] = array(
+      '#prefix' => '<div class="casa-availability-constraints-message">
+                    <label>' . $unit->name . ' ' . t('Availability Constraints') . ':' . '</label>
+                      <ol>',
+      '#markup' => $availability_constraints_message,
+      '#suffix' => '</ol></div>',
+      '#weight' => 999,
+    );
+  }
+
+  // We append the validate handler to #validate in case a form callback_wrapper
+  // is used to add validate handlers earlier.
+  $form['#validate'][] = 'rooms_form_start_end_dates_validate';
+  // @todo validate with 'rooms_booking_availability_search_form_validate()';
+
+  $form['#attached']['css'][] = drupal_get_path('module', 'rooms_availability_hidden_calendars') . '/css/rooms_availability_hidden_calendars.css';
+  $form['#attached']['js'][] = drupal_get_path('module', 'rooms_availability_hidden_calendars') . '/js/rooms_availability_hidden_calendars.js';
+  $form['#attached']['js'][] = array(
+    'data' => array('roomsAvailability' => array('roomID' => $unit_id)),
+    'type' => 'setting',
+  );
+  return $form;
+}
+
+/**
+ * Submit handler for the rooms_availability_hidden_calendars_booking_form().
+ */
+function rooms_availability_hidden_calendars_booking_form_submit(&$form, &$form_state) {
+  list($url, $options) = _rooms_availability_hidden_calendars_form_get_redirect_url($form_state);
+  $form_state['redirect'] = array($url, $options);
+}
+
+/**
+ * AJAX Submit handler for rooms_availability_hidden_calendars_booking_form().
+ */
+function rooms_availability_hidden_calendars_booking_form_ajax_submit(&$form, &$form_state) {
+  list($url, $options) = _rooms_availability_hidden_calendars_form_get_redirect_url($form_state);
+  ctools_include('ajax');
+  ctools_add_js('ajax-responder');
+  $commands[] = ctools_ajax_command_redirect($url, 0, $options);
+  $page = array('#type' => 'ajax', '#commands' => $commands);
+  $commands = ajax_prepare_response($page);
+  print ajax_render($commands);
+  drupal_exit();
+}
+
+/**
+ * Helper function converts variables from form into a URL for redirect.
+ */
+function _rooms_availability_hidden_calendars_form_get_redirect_url(&$form_state) {
+  // Create date objects.
+  $start_date = new DateTime($form_state['values']['rooms_start_date']);
+  $end_date = new DateTime($form_state['values']['rooms_end_date']);
+
+  // Convert dates to the required URL format.
+  $start_date = $start_date->format('Y-m-d');
+  $end_date = $end_date->format('Y-m-d');
+
+  $query_string = array();
+  if (!empty($form_state['values']['group_size'])) {
+    $query_string['rooms_group_size1'] = $form_state['values']['group_size'];
+  }
+
+  $query_string['rooms_id'] = $form_state['values']['unit_id'][0];
+  $url = "booking/$start_date/$end_date/0";
+  $options = array('query' => $query_string);
+
+  return array($url, $options);
+}
+
+/**
+ * Create links to manage calendar navigation using Ajax.
+ */
+function availability_calendars_render_link($link_text, $unit_id, $year, $month) {
+  // drupal_add_library is invoked automatically when a form element has the
+  // '#ajax' property, but since we are not rendering a form here, we have to
+  // do it ourselves.
+  drupal_add_library('system', 'drupal.ajax');
+
+  // The use-ajax class is special, so that the link will call without causing
+  // a page reload. Note the /nojs portion of the path - if javascript is
+  // enabled, this part will be stripped from the path before it is called.
+  $link = l($link_text, 'hidden-calendars/nojs/' . $unit_id . '/' . $year . '/' . $month,
+    array(
+      'attributes' => array(
+        'class' => array(
+          'use-ajax',
+        ),
+      ),
+    )
+  );
+
+  return $link;
+}
