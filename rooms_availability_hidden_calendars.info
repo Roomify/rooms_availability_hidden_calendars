@@ -2,5 +2,6 @@ name = Rooms Availability Hidden Calendars
 description = Ctools plugin to create availability calendars on the page
 core = 7.x
 
+dependencies[] = rooms_availability
 dependencies[] = ctools
 dependencies[] = panels

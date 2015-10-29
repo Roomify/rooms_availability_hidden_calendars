@@ -19,6 +19,8 @@ Drupal.behaviors.roomsAvailabilityThreeCalendars = {
       }
     });
 
+    unit_id = Drupal.settings.roomsAvailability.roomID;
+
     // Convert php current month to js (which counts months starting from 0).
     currentMonth = Drupal.settings.roomsCalendar.currentMonth - 1;
     currentYear = Drupal.settings.roomsCalendar.currentYear;
@@ -54,6 +56,19 @@ Drupal.behaviors.roomsAvailabilityThreeCalendars = {
     calendars[1] = new Array('#calendar1', month2, year2);
     calendars[2] = new Array('#calendar2', month3, year3);
 
+    events = [];
+    var url = Drupal.settings.basePath + '?q=bat/v1/availability&units=' + unit_id + '&start_date=' + year1 + '-' + (month1+1) + '-01&duration=3M';
+    $.ajax({
+      url: url,
+      success: function(data) {
+        events = data['events'];
+
+        $.each(calendars, function(key, value) {
+          $(value[0]).fullCalendar('refetchEvents');
+        });
+      }
+    });
+
     $.each(calendars, function(key, value) {
       // phpmonth is what we send via the url and need to add one since php handles
       // months starting from 1 not zero
@@ -76,8 +91,9 @@ Drupal.behaviors.roomsAvailabilityThreeCalendars = {
         windowResize: function(view) {
           $(value[0]).fullCalendar('refetchEvents');
         },
-        events: Drupal.settings.basePath + '?q=rooms/units/unit/' + Drupal.settings.roomsAvailability.roomID + '/availability/json/' + value[2] + '/' + phpmonth,
-
+        events: function(start, end, timezone, callback) {
+          callback(events[unit_id]);
+        },
         select: function(start, end, allDay) {
           end = end.subtract(1, 'day');
           var sd = start.format('DD/MM/YYYY');
@@ -172,7 +188,7 @@ Drupal.behaviors.roomsAvailabilityThreeCalendars = {
 
     // Show/hide calendars on button click.
     if (!($('body').hasClass('casa-custom-booking-page'))) {
-      $(".availability_calendars_button a").once().click(function(){
+      $(".availability_calendars_button a").once().click(function() {
         var $target = $('.availability-three-calendar-block'),
         $toggle = $(this);
         $target.slideToggle( 400, function () {
